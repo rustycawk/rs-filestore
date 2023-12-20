@@ -1,99 +1,80 @@
-use actix_web::http::header::ContentType;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use futures_util::stream::StreamExt;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::fs;
-use std::io::{self};
+use actix_multipart::Multipart;
+use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
+use futures_util::StreamExt;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Mutex;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct FileMeta {
-    filename: String,
-    sha256: String,
-}
+const KEY: u8 = 22;
+const STORAGE_PATH: &str = "storage/";
+const BASE_URL: &str = "http://localhost:8080/";
 
-struct AppState {
-    files: Mutex<HashMap<String, FileMeta>>,
-    storage_dir: String,
-}
-
-async fn upload_file(mut payload: web::Payload, state: web::Data<AppState>) -> impl Responder {
-    let mut sha256 = Sha256::new();
-    let mut body = Vec::new();
-
-    // Lock the Mutex to obtain mutable access to the HashMap
-    let mut files = state.files.lock().unwrap();
-
-    // Read the payload and compute SHA-256 hash
-    while let Some(chunk) = payload.next().await {
-        let chunk = chunk.unwrap();
-        sha256.update(&chunk);
-        body.extend_from_slice(&chunk);
+fn encrypt(data: &mut [u8]) {
+    for byte in data {
+        *byte ^= KEY;
     }
-
-    let sha256_hash = format!("{:x}", sha256.finalize());
-
-    // Check if the file with the same hash already exists
-    if let Some(existing_file) = files.get(&sha256_hash) {
-        return HttpResponse::Ok().json(existing_file);
-    }
-
-    // Save the file to the storage directory
-    let filename = format!("{}.dat", &sha256_hash);
-    let file_path = Path::new(&state.storage_dir).join(&filename);
-    fs::write(&file_path, &body).expect("Failed to write file");
-
-    // Update the file metadata
-    let file_meta = FileMeta {
-        filename,
-        sha256: sha256_hash.clone(),
-    };
-    files.insert(sha256_hash, file_meta.clone());
-
-    HttpResponse::Created().json(file_meta)
 }
 
-async fn get_file(meta: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
-    let files = state.files.lock().unwrap();
-    if let Some(file_meta) = files.get(&meta.into_inner()) {
-        let file_path = Path::new(&state.storage_dir).join(&file_meta.filename);
-        if let Ok(file_content) = fs::read(file_path) {
-            HttpResponse::Ok()
-                .insert_header(ContentType::octet_stream())
-                .body(file_content)
-        } else {
-            HttpResponse::InternalServerError().finish()
+fn decrypt(data: &mut [u8]) {
+    encrypt(data);
+}
+
+fn generate_filename() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(10)
+        .map(char::from)
+        .collect()
+}
+
+#[post("/upload")]
+async fn upload(mut payload: Multipart) -> HttpResponse {
+    loop {
+        let mut field = payload.next().await.unwrap().unwrap();
+        let filename: String = generate_filename();
+        let mut buffer = Vec::new();
+        while let Some(chunk) = field.next().await {
+            let data = chunk.unwrap();
+            buffer.extend_from_slice(&data);
         }
-    } else {
-        HttpResponse::NotFound().finish()
+        encrypt(&mut buffer);
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(Path::new(STORAGE_PATH).join(&filename));
+        file.unwrap()
+            .write_all(&buffer)
+            .expect("Could not write file");
+        let mut map = std::collections::HashMap::new();
+        map.insert("link", format!("{}{}", &BASE_URL, &filename));
+        return HttpResponse::Created().json(&map);
     }
+}
+
+#[get("/{filename}")]
+async fn get(req: HttpRequest) -> HttpResponse {
+    let filename = req.match_info().get("filename").unwrap();
+    let mut buffer = Vec::new();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open(Path::new("storage/").join(filename))
+        .unwrap();
+    file.read_to_end(&mut buffer).expect("Could not read file");
+    decrypt(&mut buffer);
+    HttpResponse::Ok().body(buffer)
 }
 
 #[actix_web::main]
-async fn main() -> io::Result<()> {
-    // Define storage directory
-    let storage_dir = "storage";
-
-    // Create the storage directory if it does not exist
-    fs::create_dir_all(storage_dir).expect("Failed to create storage directory");
-
-    // Create the AppState with an empty file map
-    let app_state = web::Data::new(AppState {
-        files: HashMap::new().into(),
-        storage_dir: storage_dir.to_string(),
-    });
-
-    // Start the Actix HTTP server
-    HttpServer::new(move || {
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| {
         App::new()
-            .app_data(app_state.clone())
-            .route("/upload", web::post().to(upload_file))
-            .route("/files/{file_hash}", web::get().to(get_file))
+            .app_data(web::JsonConfig::default())
+            .service(upload)
+            .service(get)
     })
-    .bind("127.0.0.1:8080")?
+    .bind("0.0.0.0:8080")?
     .run()
     .await
 }
