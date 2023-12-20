@@ -3,11 +3,12 @@ use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use futures_util::StreamExt;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{Read, Result, Write};
 use std::path::Path;
 
-const KEY: u8 = 22;
+const KEY: u8 = 21;
 const STORAGE_PATH: &str = "storage/";
 const BASE_URL: &str = "http://localhost:8080/";
 
@@ -30,7 +31,7 @@ fn generate_filename() -> String {
 }
 
 #[post("/upload")]
-async fn upload(mut payload: Multipart) -> HttpResponse {
+async fn upload(mut payload: Multipart) -> Result<HttpResponse> {
     loop {
         let mut field = payload.next().await.unwrap().unwrap();
         let filename: String = generate_filename();
@@ -47,27 +48,29 @@ async fn upload(mut payload: Multipart) -> HttpResponse {
         file.unwrap()
             .write_all(&buffer)
             .expect("Could not write file");
-        let mut map = std::collections::HashMap::new();
+        let mut map = HashMap::new();
         map.insert("link", format!("{}{}", &BASE_URL, &filename));
-        return HttpResponse::Created().json(&map);
+        return Ok(HttpResponse::Created().json(&map));
     }
 }
 
 #[get("/{filename}")]
-async fn get(req: HttpRequest) -> HttpResponse {
+async fn get(req: HttpRequest) -> Result<HttpResponse> {
     let filename = req.match_info().get("filename").unwrap();
     let mut buffer = Vec::new();
     let mut file = OpenOptions::new()
         .read(true)
-        .open(Path::new("storage/").join(filename))
-        .unwrap();
+        .open(Path::new("storage/").join(filename))?;
     file.read_to_end(&mut buffer).expect("Could not read file");
     decrypt(&mut buffer);
-    HttpResponse::Ok().body(buffer)
+    Ok(HttpResponse::Ok().body(buffer))
 }
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<()> {
+    if !Path::new(STORAGE_PATH).exists() {
+        std::fs::create_dir(STORAGE_PATH).unwrap();
+    }
     HttpServer::new(|| {
         App::new()
             .app_data(web::JsonConfig::default())
