@@ -1,5 +1,6 @@
 use actix_multipart::Multipart;
 use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web_prom::PrometheusMetricsBuilder;
 use futures_util::StreamExt;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -71,13 +72,24 @@ async fn main() -> Result<()> {
     if !Path::new(STORAGE_PATH).exists() {
         std::fs::create_dir(STORAGE_PATH).unwrap();
     }
-    HttpServer::new(|| {
+
+    let mut labels = HashMap::new();
+    labels.insert("label1".to_string(), "value1".to_string());
+    let prometheus = PrometheusMetricsBuilder::new("api")
+        .endpoint("/metrics")
+        .const_labels(labels)
+        .build()
+        .unwrap();
+
+    HttpServer::new(move || {
         App::new()
+            .wrap(prometheus.clone())
             .app_data(web::JsonConfig::default())
             .service(upload)
             .service(get)
     })
     .bind("0.0.0.0:8080")?
     .run()
-    .await
+    .await?;
+    Ok(())
 }
