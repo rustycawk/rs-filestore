@@ -2,6 +2,7 @@ use actix_multipart::Multipart;
 use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_prom::PrometheusMetricsBuilder;
 use futures_util::StreamExt;
+use openssl::symm::{Cipher, Crypter, Mode};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
@@ -9,18 +10,29 @@ use std::fs::OpenOptions;
 use std::io::{Read, Result, Write};
 use std::path::Path;
 
-const KEY: u8 = 21;
+const KEY: &[u8] = b"\xb5M\xb1\x99\x96&\xdd\x9e\xe6:\xec\xbb\xc6\x81\xfd\xa5\xf7\x98\xc2 _\xc2R^]\xfc~M\xdbx\xfe\xb8";
+const IV: &[u8] = b"cQ\x11\xf7&\xed\x83>\xcd&\xf4shz,x";
 const STORAGE_PATH: &str = "storage/";
 const BASE_URL: &str = "http://localhost:8080/";
 
-fn encrypt(data: &mut [u8]) {
-    for byte in data {
-        *byte ^= KEY;
-    }
+fn encrypt(data: &[u8]) -> Vec<u8> {
+    let cipher = Cipher::aes_256_cbc();
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, KEY, Some(IV)).unwrap();
+    let mut ciphertext = vec![0; data.len() + cipher.block_size()];
+    let count = crypter.update(data, &mut ciphertext).unwrap();
+    let rest = crypter.finalize(&mut ciphertext[count..]).unwrap();
+    ciphertext.truncate(count + rest);
+    ciphertext
 }
 
-fn decrypt(data: &mut [u8]) {
-    encrypt(data);
+fn decrypt(data: &[u8]) -> Vec<u8> {
+    let cipher = Cipher::aes_256_cbc();
+    let mut crypter = Crypter::new(cipher, Mode::Decrypt, KEY, Some(IV)).unwrap();
+    let mut plaintext = vec![0; data.len() + cipher.block_size()];
+    let count = crypter.update(data, &mut plaintext).unwrap();
+    let rest = crypter.finalize(&mut plaintext[count..]).unwrap();
+    plaintext.truncate(count + rest);
+    plaintext
 }
 
 fn generate_filename() -> String {
@@ -41,13 +53,13 @@ async fn upload(mut payload: Multipart) -> Result<HttpResponse> {
             let data = chunk.unwrap();
             buffer.extend_from_slice(&data);
         }
-        encrypt(&mut buffer);
+        let encrypted_buffer = encrypt(&buffer);
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(Path::new(STORAGE_PATH).join(&filename));
         file.unwrap()
-            .write_all(&buffer)
+            .write_all(&encrypted_buffer)
             .expect("Could not write file");
         let mut map = HashMap::new();
         map.insert("link", format!("{}{}", &BASE_URL, &filename));
@@ -63,8 +75,8 @@ async fn get(req: HttpRequest) -> Result<HttpResponse> {
         .read(true)
         .open(Path::new("storage/").join(filename))?;
     file.read_to_end(&mut buffer).expect("Could not read file");
-    decrypt(&mut buffer);
-    Ok(HttpResponse::Ok().body(buffer))
+    let decrypted_buffer = decrypt(&buffer);
+    Ok(HttpResponse::Ok().body(decrypted_buffer))
 }
 
 #[actix_web::main]
