@@ -3,6 +3,7 @@ use actix_web::{get, post, web, App, Error, HttpRequest, HttpResponse, HttpServe
 use actix_web_prom::PrometheusMetricsBuilder;
 use futures_util::StreamExt;
 use image::ImageOutputFormat;
+use num_cpus;
 use openssl::symm::{Cipher, Crypter, Mode};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -150,6 +151,7 @@ async fn main() -> Result<()> {
             .service(get)
     })
     .bind(BIND_ADDRESS)?
+    .workers(num_cpus::get())
     .run()
     .await?;
     Ok(())

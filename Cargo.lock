@@ -1327,6 +1327,7 @@ dependencies = [
  "actix-web-prom",
  "futures-util",
  "image",
+ "num_cpus",
  "openssl",
  "rand",
  "serde",
