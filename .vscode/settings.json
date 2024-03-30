@@ -7,4 +7,5 @@
         "source.removeUnusedImports": "explicit",
     },
     "editor.codeActionWidget.includeNearbyQuickFixes": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
 }

@@ -1,2 +1,5 @@
 /target
 /storage
+iv
+key
+config.toml

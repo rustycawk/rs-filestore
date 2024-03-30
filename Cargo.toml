@@ -17,3 +17,9 @@ rand = "0.8"
 openssl = "0.10"
 image = "0.24"
 num_cpus = "1.16.0"
+actix-cors = "0.7.0"
+prometheus = "0.13.3"
+lazy_static = "1.4.0"
+
+[build-dependencies]
+rand = "0.8"
