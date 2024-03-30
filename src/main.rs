@@ -56,15 +56,19 @@ fn decrypt(data: &[u8]) -> Vec<u8> {
 }
 
 fn generate_filename() -> String {
-    thread_rng()
+    let filename = thread_rng()
         .sample_iter(&Alphanumeric)
         .take(10)
         .map(char::from)
-        .collect()
+        .collect();
+    if Path::new(&STORAGE_PATH).join(&filename).exists() {
+        return generate_filename();
+    }
+    filename
 }
 
 #[post("/upload")]
-async fn upload(mut payload: Multipart) -> Result<HttpResponse> {
+async fn upload(mut payload: Multipart) -> Result<HttpResponse, Error> {
     let mut field = payload.next().await.unwrap().unwrap();
     let filename: String = generate_filename();
     let mut buffer = Vec::new();
