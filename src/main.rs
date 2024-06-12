@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(prometheus.clone())
-            .wrap(Cors::default().allow_any_origin().send_wildcard())
+            .wrap(Cors::default().allow_any_origin().supports_credentials().send_wildcard())
             .app_data(web::JsonConfig::default())
             .service(upload)
             .service(get)
