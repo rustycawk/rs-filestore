@@ -27,8 +27,10 @@ fn create_empty_config_file() {
 }
 
 fn main() {
-    if !Path::new("key").exists() && !Path::new("iv").exists() {
+    if !Path::new("key").exists() {
         generate_key();
+    }
+    if !Path::new("iv").exists() {
         generate_iv();
     }
     if !Path::new("config.toml").exists() {
