@@ -3,3 +3,4 @@
 iv
 key
 config.toml
+.env

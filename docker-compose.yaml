@@ -1,0 +1,14 @@
+services:
+  filestore:
+    build: .
+    ports:
+      - "$PORT:8471"
+    volumes:
+      - filestore-data:/usr/src/app
+    env_file:
+      - .env
+    environment:
+      RUST_LOG: "info"
+
+volumes:
+  filestore-data:

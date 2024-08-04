@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
+use dotenv::dotenv;
+use std::env;
 
 #[macro_use]
 extern crate lazy_static;
@@ -32,7 +34,6 @@ lazy_static! {
     //     &std::env::var("STORAGE_PATH").unwrap_or("storage".into())[..];
 }
 const STORAGE_PATH: &str = "storage/";
-const BASE_URL: &str = "https://fs.5dev.kz/";
 const BIND_ADDRESS: &str = "0.0.0.0:8471";
 
 fn encrypt(data: &[u8]) -> Vec<u8> {
@@ -85,7 +86,8 @@ async fn upload(mut payload: Multipart) -> Result<HttpResponse, Error> {
         .write_all(&encrypted_buffer)
         .expect("Could not write file");
     let mut map = HashMap::new();
-    map.insert("link", format!("{}{}", &BASE_URL, &filename));
+    let base_url = env::var("BASE_URL").unwrap_or_else(|_| "https://fs.5dev.kz/".into());
+    map.insert("link", format!("{}{}", base_url, &filename));
     return Ok(HttpResponse::Created().json(&map));
 }
 
@@ -163,6 +165,7 @@ fn update_file_count_and_size(file_count: &IntGauge, combined_size: &IntGauge) {
 
 #[actix_web::main]
 async fn main() -> Result<()> {
+    dotenv().ok();
     if !Path::new(STORAGE_PATH).exists() {
         std::fs::create_dir(STORAGE_PATH).unwrap();
     }

@@ -20,6 +20,7 @@ num_cpus = "1.16.0"
 actix-cors = "0.7.0"
 prometheus = "0.13.3"
 lazy_static = "1.4.0"
+dotenv = "0.15.0"
 
 [build-dependencies]
 rand = "0.8"
